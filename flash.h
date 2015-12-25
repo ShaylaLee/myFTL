@@ -21,10 +21,14 @@
 #define LB_SIZE_2048 4
 
 //定义 flash 的结构，每个页包含的扇区数、每个块包含的页数
-#define SECT_NUM_PER_PAGE 8        //4->8
-#define PAGE_NUM_PER_BLK  64       //64      
+#define SUBPAGE_NUM_PER_PAGE 4     //每个页有4个子页  
+#define SECT_NUM_PER_SUBPAGE 8      //每个子页8个扇区
+#define SECT_NUM_PER_PAGE (SUBPAGE_NUM_PER_PAGE * SECT_NUM_PER_SUBPAGE)
+#define PAGE_NUM_PER_BLK  256       //每个块256个页
+#define SUBPAGE_NUM_PER_BLK  （PAGE_NUM_PER_BLK * SUBPAGE_NUM_PER_PAGE）      //每个块256*4个子页       
 #define SECT_NUM_PER_BLK  (SECT_NUM_PER_PAGE * PAGE_NUM_PER_BLK)
 #define SECT_SIZE_B 512
+
 
 #define SECT_BITS       3         //2->3
 #define PAGE_BITS       6         //6
@@ -76,7 +80,7 @@
 struct blk_state {
    int free;       //是否是空闲块
    int ec;         //已擦除的次数
-   int update_ec;  //程序中未使用到
+   int isdata_blk;   //0表示日志块，1表示数据块 
 };
 
 //物理扇区的状态
