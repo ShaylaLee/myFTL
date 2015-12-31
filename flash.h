@@ -30,21 +30,25 @@
 #define SECT_SIZE_B 512
 
 
-#define SECT_BITS       3         //2->3
-#define PAGE_BITS       6         //6
-#define PAGE_SECT_BITS  9         //8->9
-#define BLK_BITS        23        //24->23
+#define SECT_BITS       3         //扇区位数
+#define SUBP_BITS       2         //子页位数
+#define PAGE_BITS       8         //页的位数
+#define PAGE_SECT_BITS  13         //3+2+8
+#define BLK_BITS        19        //19+13 = 32
 
 #define NAND_STATE_FREE    -1
 #define NAND_STATE_INVALID -2
 
 //以下是一些进行地址转换的宏定义，根据以上 flash 结构进行定义
-#define SECT_MASK_IN_SECT 0x0007        //0x0003 -> 0x0007    低三位表示页内扇区偏移
-#define PAGE_MASK_IN_SECT 0x01F8        //0x00FC -> 0x01F8    中间六位表示块内页偏移
-#define PAGE_SECT_MASK_IN_SECT 0x01FF   //0x00FF -> 0x01FF    低九位表示块内扇区偏移
-#define BLK_MASK_IN_SECT  0xFFFFFE00    //0XFFFFFF00 -> 0xFFFFFE00    高23位表示闪存内块偏移
-#define PAGE_BITS_IN_PAGE 0x003F        //块内偏移   
-#define BLK_MASK_IN_PAGE  0x3FFFFFC0    //闪存内块偏移
+//低30位为地址。
+
+#define SECT_MASK_IN_SECT 0x0007        //   低三位表示子页内扇区偏移
+#define SUBP_MASK_IN_SECT 0x0018        //   中间两位表示页内子页偏移
+#define PAGE_MASK_IN_SECT 0x1FE0        //   8位表示块内页偏移
+#define PAGE_SECT_MASK_IN_SECT 0x1FFF   //    低13位表示块内扇区偏移
+#define BLK_MASK_IN_SECT  0xFFFFE000    //0XFFFFFF00 -> 0xFFFFFE00    高19位表示闪存内块偏移，块号
+#define PAGE_BITS_IN_PAGE 0x00FF        //块内页偏移  ，8位 
+#define BLK_MASK_IN_PAGE  0x3FFFE000    //闪存内块偏移 (去掉最前面2位)
 
 #define PAGE_SIZE_B (SECT_SIZE_B * SECT_NUM_PER_PAGE)
 #define PAGE_SIZE_KB (PAGE_SIZE_B / 1024)
@@ -58,14 +62,18 @@
 #define PAGE_SECT_NO_SECT(sect) ((sect) & PAGE_SECT_MASK_IN_SECT)
 #define BLK_NO_PAGE(page)  (((page) & BLK_MASK_IN_PAGE) >> PAGE_BITS)
 #define PAGE_NO_PAGE(page) ((page) & PAGE_MASK_IN_PAGE)
-#define SECTOR(blk, page) (((blk) << PAGE_SECT_BITS) | (page))
+#define SECTOR(blk, page) (((blk) << PAGE_SECT_BITS) | (page))  //根据块号和块内扇区号 求 扇区号
 
-#define BLK_MASK_SECT 0x3FFFFE00     //0x3FFFFF00 -> 0x3FFFFE00 低30位为地址（以扇区为单位），见sect_state结构
-#define PGE_MASK_SECT 0x000001F8     //0x000000FC -> 0x000001F8
-#define OFF_MASK_SECT 0x00000007     //0x00000003 -> 0x00000007
+#define BLK_MASK_SECT 0x3FFFE000     // 0x3FFFFE00 -> 0x3FFFE000低30位为地址（以扇区为单位），见sect_state结构
+#define PGE_MASK_SECT 0x00001FE0     // 页号掩码
+#define SUBP_MASK_SECT 0x00001FF8    //子页掩码
+#define OFF_MASK_SECT 0x00000007     //子页内扇区掩码
+#define OFF_MASK_SECT_IN_PAGE 0x0000001F     //页内扇区掩码
+
 #define IND_MASK_SECT (PGE_MASK_SECT | OFF_MASK_SECT)
-#define BLK_BITS_SECT 21     //22->21 块编号最多21位，因为扇区地址为30位，块内扇区偏移需要3+6共9位
-#define PGE_BITS_SECT  6
+#define BLK_BITS_SECT 17     //块编号最多17位，因为扇区地址为30位，块内扇区偏移需要3+2+8共13位
+#define PGE_BITS_SECT  13    //一个页内的扇区号
+#define SUBP_BIT_PAGE  2     //一个页内的子页号
 #define OFF_BITS_SECT  3
 #define IND_BITS_SECT (PGE_BITS_SECT + OFF_BITS_SECT)
 #define BLK_F_SECT(sect) (((sect) & BLK_MASK_SECT) >> IND_BITS_SECT)

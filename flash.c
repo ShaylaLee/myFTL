@@ -222,16 +222,16 @@ int nand_oob_read(_u32 psn)
     if(nand_blk[pbn].sect[pin + i].free == 0){
 
       if(nand_blk[pbn].sect[pin + i].valid == 1){
-        valid_flag = 1;
+        valid_flag = 1;      //有效
         break;
       }
       else{
-        valid_flag = -1;
+        valid_flag = -1;     //无效
         break;
       }
     }
     else{
-      valid_flag = 0;
+      valid_flag = 0;        //空闲
       break;
     }
   }
