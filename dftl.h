@@ -25,16 +25,18 @@ int delay_flash_update;
 int save_count;
 struct ftl_operation * opm_setup();
 
-// subpagemap[] 中的元素,需要记录4个LSPN和一个PPN，总计20B
-struct subpagemap_entry {
-	unsigned int lspn[SUBPAGE_NUM_PER_PAGE];
-    unsigned int ppn;    // LPN-PPN
-};  
+//每个映射条目维护的状态， opagemap[] 中的元素，数组 index 表示逻辑页号
+struct opm_entry {
+  _u32 free  : 1;            //该条目是否已被使用
+  _u32 ppn   : 31;           //该逻辑页对应的物理页号 LPN-PPN
+  _u32 cache_status : 1;     //该条目是否被缓存
+  _u32 update : 1;           //该缓存是否 dirty （前提是已缓存）
+  _u32 cache_age : 30;       //该条目的热度
+};
 
-
-//pagemap[] 数组的元素,页映射表条目，以lpn为索引,只记录PPN，4B大小
-struct pagemap_entry{
-    unsigned int ppn;    // LPN-PPN
+//mapdir[] 数组的元素，DFTL 中的 GTD 表，记录的是映射页的物理位置
+struct omap_dir{
+  unsigned int ppn;  
 };
 
 //每个映射页能够存放的条目数量，由于映射条目按照 LPN 顺序存放，所以映射页只记录 PPN
@@ -48,36 +50,9 @@ int TOTAL_MAP_ENTRIES;
 //已缓存的条目数量
 int CACHE_NUM_ENTRIES;
 
-/*//映射表数组
+//映射表数组
 sect_t opagemap_num;
 struct opm_entry *opagemap;
-*/
 
 //本次请求是否是部分更新写
 int dftl_update_write;
-
-
-
-/****myFTL添加******/
-
-//LSPN 节点 数据结构
-struct lspn_node{
-	_u8 lsn[SECT_NUM_PER_SUBPAGE];  //子页中每个扇区的数据是否有效
-}
-
-//数据缓存LRU链表
-struct lspn_node *LRU_list;
-
-
-//页映射表条目数目，以及页映射表数组
-sect_t pagemap_num;
-struct pagemap_entry *pagemap;
-
-//子页
-sect_t subpagemap_num;
-struct subpagemap_entry *subpagemap;
-
-
-
-
-
