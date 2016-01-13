@@ -82,6 +82,14 @@ struct pagemap_entry *pagemap;
 sect_t subpagemap_num;
 struct subpagemap_entry *subpagemap;
 
+//每个映射页能够存放的条目数量，由于映射条目按照 LPN 顺序存放，所以映射页只记录 PPN
+//对于 16KB 页大小，PPN 按照 4B 算，每个映射页存放 1024 *4 个条目
+#define MAP_ENTRIES_PER_PAGE  (SECT_SIZE_B*SECT_NUM_PER_PAGE/4)
+
+//直接维护一个每个物理子页的数据有效性。
+
+
+
 
 
 

@@ -148,6 +148,7 @@ double calculate_delay_flash()
   Initialize Flash Drive 
   ***********************************************************************/
 
+//通过读取参数文件。初始化某些变量的值
 void initFlash()
 {
   blk_t total_blk_num;
@@ -178,8 +179,8 @@ void initFlash()
 
     // pagemap
     case 1: ftl_op = pm_setup(); break;
-    // blockmap
-    //case 2: ftl_op = bm_setup(); break;
+    // MYFTL map
+    case 2: ftl_op = mpm_setup(); break;
     // o-pagemap 
     case 3: ftl_op = opm_setup(); break;
     // fast
@@ -289,6 +290,13 @@ void endFlash()
   ***********************************************************************/
 
  //调用 FTL 的读写函数，将转换后的页请求下发到 FTL 层
+ //请求以子页为单位。
+ /**
+ *start_blk_no 起始扇区号，以子页为单位对齐
+ *block_cnt  访问扇区数，注意是扇区
+ *operation  0 写；1 读
+ *map_flag  标志
+ */
 void send_flash_request(int start_blk_no, int block_cnt, int operation, int map_flag)
 {
 	int size;
@@ -622,35 +630,43 @@ double callFsim(unsigned int secno, int scount, int operation)
 }
 
 //假设页映射表被全部缓存，去掉映射缓存的管理
+/**
+secno	起始扇区号， 每次增8
+scount	访问扇区数， 每次都为8
+*/
 double callFsim2(unsigned int secno, int scount, int operation)
 {
   double delay; 
-  int bcount;
-  unsigned int blkno; // pageno for page based FTL
+  int bcount;  //
+  unsigned int subpno; // subpage no
   int cnt,z,i;
 
   int pos=-1;
   
 //printf("zy:1. callFsim2 begin.\n");
 
-	if(ftl_type == 3) 
+	if(ftl_type == 2) 
 	{
-		page_num_for_2nd_map_table = (opagemap_num / MAP_ENTRIES_PER_PAGE);
+
+		//映射表在闪存中也存在一份，但是默认全部缓存，之后对闪存中的映射表不进行替换和更新。
+		page_num_for_2nd_map_table = (pagemap_num / MAP_ENTRIES_PER_PAGE);
 		if(youkim_flag1 == 0 ) {
 			youkim_flag1 = 1;
 			init_arr();
 		}
 
-		if((opagemap_num % MAP_ENTRIES_PER_PAGE) != 0){
+		if((pagemap_num % MAP_ENTRIES_PER_PAGE) != 0){
 			page_num_for_2nd_map_table++;
 		}
   
-		blkno = secno / SECT_NUM_PER_PAGE;
-		blkno += page_num_for_2nd_map_table;
+		subpno = secno / SECT_NUM_PER_SUBPAGE; 
+		subpno += page_num_for_2nd_map_table;  //跳过前面为映射页的扇区数
 		bcount = (secno + scount -1)/SECT_NUM_PER_PAGE - (secno)/SECT_NUM_PER_PAGE + 1; 
 	}
 
   cnt = bcount;
+
+	//以子页进行了对齐
   
   switch(operation)
   {
@@ -662,10 +678,10 @@ double callFsim2(unsigned int secno, int scount, int operation)
     {   
         cnt--;
 
-		if(ftl_type == 3)
+		if(ftl_type == 2)
         {	
-          send_flash_request(blkno*SECT_NUM_PER_PAGE, SECT_NUM_PER_PAGE, operation, 1); 
-          blkno++;
+          send_flash_request(subpno*SECT_NUM_PER_SUBPAGE, SECT_NUM_PER_SUBPAGE, operation, 1); 
+          subpno++;
         }
     }
     break;

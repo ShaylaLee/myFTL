@@ -68,7 +68,11 @@ _u32 mpm_gc_cost_benefit()
 }
 
 // 读：从映射表 opagemap[] 中获取 PPN， 然后调用 nand_page_read() 进入 flash 层
-//读函数，起始逻辑扇区号，扇区大小，
+/**
+lsn	起始扇区号，以子页为单位对齐
+size  扇区数，一般是8
+
+*/
 size_t mpm_read(sect_t lsn, sect_t size, int map_flag)
 {
   int i;
@@ -344,6 +348,9 @@ int mpm_gc_run(int small, int map_flag)
 
 
 // DFTL 写：修改映射表状态，触发垃圾回收
+/**
+一次函数调用，是对子页的一个写。
+*/
 size_t mpm_write(sect_t lsn, sect_t size, int map_flag)  
 {
   int i;
