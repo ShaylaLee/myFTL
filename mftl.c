@@ -70,14 +70,16 @@ _u32 mpm_gc_cost_benefit()
 // 读：从映射表 opagemap[] 中获取 PPN， 然后调用 nand_page_read() 进入 flash 层
 /**
 lsn	起始扇区号，以子页为单位对齐
-size  扇区数，一般是8
+size  扇区数，一般是8，一个子页大小
 
 */
 size_t mpm_read(sect_t lsn, sect_t size, int map_flag)
 {
   int i;
   int lpn = lsn/SECT_NUM_PER_PAGE; // logical page number
+  int lspn = lsn/SECT_NUM_PER_SUBPAGE; //logicaL subpage number
   int size_page = size/SECT_NUM_PER_PAGE; // size in page 
+  int size_subpage = size/SECT_NUM_PER_SUBPAGE;
   int sect_num;
 
   sect_t s_lsn;	// starting logical sector number
@@ -92,7 +94,7 @@ size_t mpm_read(sect_t lsn, sect_t size, int map_flag)
 
   sect_num = (size < SECT_NUM_PER_PAGE) ? size : SECT_NUM_PER_PAGE;
 
-	int s_lspn = lpn * SUBPAGE_NUM_PER_PAGE;  //starting subpage logical number
+	int s_lspn = lpn * SUBPAGE_NUM_PER_PAGE;  //starting subpage logical number,子页所在页的子页开始。
   int lspns[SUBPAGE_NUM_PER_PAGE];  
   for (i = 0; i < SUBPAGE_NUM_PER_PAGE; i++) {
 	  lspns[i] = s_lspn + i;
