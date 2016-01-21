@@ -63,8 +63,9 @@ int mftl_update_write;
 //LSPN 节点 数据结构
 struct lspn_node{
 	_u32 lspn;  //该节点的子页编号
-	_u8 lsn[SECT_NUM_PER_SUBPAGE];  //子页中每个扇区的数据是否有效
-	//int usetimes; 
+//	_u8 lsn[SECT_NUM_PER_SUBPAGE];  //子页中每个扇区的数据是否有效
+	_u8 dirty; 
+//	byte data[SECT_SIZE_B * SECT_NUM_PER_SUBPAGE];
 	struct lspn_node *next;
 }
 

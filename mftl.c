@@ -78,7 +78,7 @@ size_t mpm_read(sect_t lsn, sect_t size, int map_flag)
   int i;
   int lpn = lsn/SECT_NUM_PER_PAGE; // logical page number
   int lspn = lsn/SECT_NUM_PER_SUBPAGE; //logicaL subpage number
-  int size_page = size/SECT_NUM_PER_PAGE; // size in page 
+ // int size_page = size/SECT_NUM_PER_PAGE; // size in page 
   int size_subpage = size/SECT_NUM_PER_SUBPAGE;
   int sect_num;
 
@@ -94,32 +94,33 @@ size_t mpm_read(sect_t lsn, sect_t size, int map_flag)
 
   sect_num = (size < SECT_NUM_PER_PAGE) ? size : SECT_NUM_PER_PAGE;
 
+	struct lspn_node *node_p= LRU_list; 
+
+	//遍历数据缓存列表，如果有lspn 在缓存列表中，则直接返回。
+	while(node_p->next != NULL){	
+	  	node_p->lspn == lspn;
+			read_cache_hit_num++;	
+			return sect_num;
+	}
+
+
+	//如果要下发读整页
+	/*
 	int s_lspn = lpn * SUBPAGE_NUM_PER_PAGE;  //starting subpage logical number,子页所在页的子页开始。
   int lspns[SUBPAGE_NUM_PER_PAGE];  
   for (i = 0; i < SUBPAGE_NUM_PER_PAGE; i++) {
 	  lspns[i] = s_lspn + i;
   }
+  */
 
-	int onepage_ready[SUBPAGE_NUM_PER_PAGE] ={0};
-
-	struct lspn_node *node_p= LRU_list; 
-
-	//遍历数据缓存列表，如果有lspn 在缓存列表中，则直接返回。
-	while(node_p->next != NULL){
-		for (i = 0; i < SUBPAGE_NUM_PER_PAGE; i++) {
-	  	node_p->lspn == lspns[i];
-			onepage_ready[i] = 1;
-			read_cache_hit_num++;
-  	}				
-	}
-  
+	//map_flag 自己可以判断的，从submap中，如果submap中没有保存该lpn的映射关系 说明没有日志信息。
+	//map_flag 的值的传入的意义和确定的时间点。
   if(map_flag == 2){
   	//要读日志页
   	if(findppn_in_submap(lpn)!=-1){
  			s_psn = findppn_in_submap(lpn)* SECT_NUM_PER_PAGE;
   	}
-  }
-  else s_psn = pagemap[lpn].ppn * SECT_NUM_PER_PAGE;
+  }else s_psn = pagemap[lpn].ppn * SECT_NUM_PER_PAGE;
   
   s_lsn = lpn * SECT_NUM_PER_PAGE;
 
@@ -128,8 +129,14 @@ size_t mpm_read(sect_t lsn, sect_t size, int map_flag)
   }
 
   size = nand_page_read(s_psn, lsns, 0, map_flag);
-
   ASSERT(size == SECT_NUM_PER_PAGE);
+
+	//将其子页进行缓存，最好对整个页也进行缓存(可能下次访问内容为下个子页)
+	struct lspn_node * anode = create_anode();
+	anode->lspn = lspn;
+	anode->dirty = 0;
+	
+	insert_lspn_node(anode);
 
   return sect_num;
 }
@@ -352,6 +359,8 @@ int mpm_gc_run(int small, int map_flag)
 // DFTL 写：修改映射表状态，触发垃圾回收
 /**
 一次函数调用，是对子页的一个写。
+lsn = 子页起始扇区
+size = 子页大小，8个扇区
 */
 size_t mpm_write(sect_t lsn, sect_t size, int map_flag)  
 {
@@ -359,8 +368,9 @@ size_t mpm_write(sect_t lsn, sect_t size, int map_flag)
   static int t=0;
   static int j = 0;
   int lpn = lsn/SECT_NUM_PER_PAGE; // logical page number
-  int s_lspn = lsn/SECT_NUM_PER_SUBPAGE;  //logical subpage number
   int size_page = size/SECT_NUM_PER_PAGE; // size in page 
+  int lspn = lsn/SECT_NUM_PER_SUBPAGE; //logicaL subpage number
+  int size_subpage = size/SECT_NUM_PER_SUBPAGE;
   int ppn;
   int small;
 
@@ -377,9 +387,36 @@ size_t mpm_write(sect_t lsn, sect_t size, int map_flag)
 			lspns[i] = s_lspn + i;
 	}
 
+	ASSERT(lpn < pagemap_num);
+	ASSERT(lpn + size_page <= pagemap_num);
+
+	//写入缓存
+	int f=0;
+	srtuct lspn_node *p = LRU_list;
+	while(p->next != NULL)
+	{
+		if(p->lpsn == lspn)
+		{
+			//change data
+			p->dirty=1;
+			f=1;
+			break;
+			write_cache_hit++;
+		}
+	}
+
+	if(f==0) //未在缓存中
+	{
+		struct lspn_node * anode = create_anode();
+		anode->lpsn = lspn;
+		anode->dirty = 1;
+		insert_lspn_node(anode);
+		
+	}
+
+
+
 	
-		ASSERT(lpn < pagemap_num);
-		ASSERT(lpn + size_page <= pagemap_num);
 	
 		//逻辑页号转换为逻辑扇区号
 		s_lsn = lpn * SECT_NUM_PER_PAGE;
@@ -690,7 +727,13 @@ struct lspn_node * create_anode(){
 	
 }
 
-insert_lspn_node(struct lspn_node* anode){
+//每次命中插到末尾
+int insert_lspn_node(struct lspn_node* anode){
+	if(LRU_cur_num >= LRU_cache_num)
+	{
+		merge_LRU();
+	}
+
 	//插到末尾
 	struct lspn_node *p = LRU_list;
 	while(p->next != NULL){
@@ -698,17 +741,39 @@ insert_lspn_node(struct lspn_node* anode){
 		}
 	p->next = anode;
 	anode->next = NULL;
+	LRU_cur_num++;
+	return LRU_cur_num;
 }
 
-//获得一个LRU链表中最少使用的节点，并删除，要free掉
+//获得一个LRU链表中最少使用的节点，从链表中删除
 struct lspn_node * get_LRU_node()
 {	
 //直接返回第一个结点
+		if(LRU_cur_num == 0 || LRU_list == NULL)
+		{
+			return NULL;
+		}
 		struct lspn_node *p = LRU_list;
 		LRU_list = LRU_list->next;
+		LRU_cur_num--;
 		return p;
 }
 
+
+int free_node(lspn_node * anode)
+{
+
+	free(anode);
+	return 0;
+
+}
+
+void merge_LRU()
+{
+//各种写回操作。 分为 1234
+
+
+}
 
 
 
