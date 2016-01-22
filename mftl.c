@@ -97,10 +97,14 @@ size_t mpm_read(sect_t lsn, sect_t size, int map_flag)
 	struct lspn_node *node_p= LRU_list; 
 
 	//遍历数据缓存列表，如果有lspn 在缓存列表中，则直接返回。
-	while(node_p->next != NULL){	
-	  	node_p->lspn == lspn;
-			read_cache_hit_num++;	
-			return sect_num;
+	while(node_p != NULL){	
+	  	if(node_p->lspn == lspn)
+	  	{
+				read_cache_hit_num++;	
+				return sect_num;
+	  	}			
+			node_p = node_p->next;
+			
 	}
 
 
@@ -393,7 +397,7 @@ size_t mpm_write(sect_t lsn, sect_t size, int map_flag)
 	//写入缓存
 	int f=0;
 	srtuct lspn_node *p = LRU_list;
-	while(p->next != NULL)
+	while(p != NULL)
 	{
 		if(p->lpsn == lspn)
 		{
@@ -403,6 +407,7 @@ size_t mpm_write(sect_t lsn, sect_t size, int map_flag)
 			break;
 			write_cache_hit++;
 		}
+		p = p->next;
 	}
 
 	if(f==0) //未在缓存中
@@ -563,6 +568,141 @@ size_t mpm_write(sect_t lsn, sect_t size, int map_flag)
 
 }
 
+//整页写：修改映射表状态，触发垃圾回收
+size_t page_write(sect_t lsn, sect_t size, int map_flag)  
+{
+  int i;
+  static int t=0;
+  static int j = 0;
+  int lpn = lsn/SECT_NUM_PER_PAGE; // logical page number
+  int size_page = size/SECT_NUM_PER_PAGE; // size in page 
+  int ppn;
+  int small;
+
+  sect_t lsns[SECT_NUM_PER_PAGE];
+  int sect_num = SECT_NUM_PER_PAGE;
+
+  sect_t s_lsn;	// starting logical sector number
+  sect_t s_psn; // starting physical sector number 
+  sect_t s_psn1;
+
+
+  ASSERT(lpn < opagemap_num);
+  ASSERT(lpn + size_page <= opagemap_num);
+
+  //逻辑页号转换为逻辑扇区号
+  s_lsn = lpn * SECT_NUM_PER_PAGE;
+
+
+  if(map_flag == 2) //map page
+    small = 0;
+  else if ( map_flag == 1) //data page
+    small = 1;
+  else{
+    printf("something corrupted");
+    exit(0);
+  }
+
+  if (free_page_no[small] >= SECT_NUM_PER_BLK) 
+  {
+
+    if ((free_blk_no[small] = nand_get_free_blk(0)) == -1) 
+    {
+      int j = 0;
+
+      while (free_blk_num < 4 ){  //当空闲块少于 4 个，触发垃圾回收
+        j += opm_gc_run(small, map_flag);
+      }
+      opm_gc_get_free_blk(small, map_flag);
+    } 
+    else {
+      free_page_no[small] = 0;
+    }
+  }
+
+  memset (lsns, 0xFF, sizeof (lsns));
+  
+  //获取即将使用的空闲物理页，s_psn 表示物理扇区号
+  s_psn = SECTOR(free_blk_no[small], free_page_no[small]);
+
+  if(s_psn % SECT_NUM_PER_PAGE != 0){
+    printf("s_psn: %d\n", s_psn);
+  }
+
+  //即将写入的空闲物理页号
+  ppn = s_psn / SECT_NUM_PER_PAGE;
+  
+  for (i = 0; i < SECT_NUM_PER_PAGE; i++) 
+  {
+    lsns[i] = s_lsn + i;
+  }
+  if (opagemap[lpn].free == 0) {
+    s_psn1 = opagemap[lpn].ppn * SECT_NUM_PER_PAGE;
+    //是否是部分更新写，isHeadPartial 和 isTailPartial 在 disksim_iotrace.h 中设置
+	if( (map_flag != 2) && ( (isHead == 1 && isHeadPartial ==1) || (isTail == 1 && isTailPartial == 1) ) ){
+	  dftl_update_write = 1;
+	  nand_page_read(s_psn1, lsns, 0, 1);
+	}
+	
+    for(i = 0; i<SECT_NUM_PER_PAGE; i++){
+      nand_invalidate(s_psn1 + i, s_lsn + i);
+    } 
+    nand_stat(OOB_WRITE);
+  }
+  else {
+    opagemap[lpn].free = 0;
+  }
+
+  
+
+  if(map_flag == 2) {
+    mapdir[lpn].ppn = ppn;
+    opagemap[lpn].ppn = ppn;
+  }
+  else {
+    opagemap[lpn].ppn = ppn;
+  }
+
+  free_page_no[small] += SECT_NUM_PER_PAGE;
+
+  //向 flash 层下发写入操作
+  nand_page_write(s_psn, lsns, 0, map_flag);
+
+  return sect_num;
+}
+
+void opm_end()
+{
+  if (opagemap != NULL) {
+    free(opagemap);
+    free(mapdir);
+  }
+  
+  opagemap_num = 0;
+}
+
+//重置 FTL 层的统计状态
+void opagemap_reset()
+{
+  int i = 0;
+  
+  cache_hit = 0;
+  rqst_page_cnt = 0;
+  update_reqd = 0;
+  read_cache_hit_num = 0;
+  write_cache_hit_num = 0;
+  flash_hit = 0;
+  evict = 0;
+  delay_flash_update = 0; 
+  read_count =0;
+  write_count=0;
+  save_count = 0;
+  
+  for( i = 0; i < MAP_PAGE_NUM; i++ )
+	trans_page_update[i] = 0;
+}
+
+
 
 void mpm_end()
 {
@@ -629,6 +769,7 @@ int mpm_init(blk_t blk_num, blk_t extra_num)
 
   //创建数据缓存
   printf("LRU_list space: %d count.", LRU_cache_num);
+	LRU_list = NULL;
 	LRU_cur_num=0;
 
   extra_blk_num = extra_num;
@@ -736,10 +877,10 @@ int insert_lspn_node(struct lspn_node* anode){
 
 	//插到末尾
 	struct lspn_node *p = LRU_list;
-	while(p->next != NULL){
+	while(p != NULL){
 			p = p->next;
 		}
-	p->next = anode;
+	p = anode;
 	anode->next = NULL;
 	LRU_cur_num++;
 	return LRU_cur_num;
@@ -770,8 +911,69 @@ int free_node(lspn_node * anode)
 
 void merge_LRU()
 {
-//各种写回操作。 分为 1234
+//各种写回操作。 
+	struct lspn_node * p = LRU_list;
 
+//选定淘汰节点
+	struct lspn_node *thenode = p;
+
+	int thelspn = thenode->lspn;
+	int thelpn = thelspn/SUBPAGE_NUM_PER_PAGE;
+	int theoff = thelspn%SUBPAGE_NUM_PER_PAGE;
+	int subnum = 0;
+	int i;
+
+	int lspns[SUBPAGE_NUM_PER_PAGE] = {-1};
+	int lspntmp;
+	p = p->next;
+	while(p != NULL)
+	{
+		lspntmp = p->lspn;
+		if(lspntmp/SUBPAGE_NUM_PER_PAGE == thelpn)//同一页
+		{
+			subnum++;
+			lspns[lspntmp%SUBPAGE_NUM_PER_PAGE] = lspntmp;
+		}	
+		p = p->next;
+	}
+
+	switch(subnum)
+	{
+		case 0:
+			//选择链表前4个节点 写回日志区
+
+
+		case 1:
+
+
+		case 2:
+			//先对另外个子页进行一次读
+			int s_lspn = thelpn * SUBPAGE_NUM_PER_PAGE;
+			int a;
+			for(i=0; i<SUBPAGE_NUM_PER_PAGE;i++)
+			{
+				if(lspns[i] == -1)
+				{
+					a = s_lspn + i;
+				}
+			}
+			int lsn = a * SECT_NUM_PER_SUBPAGE;
+
+			mpm_read(lsn, SECT_NUM_PER_SUBPAGE, 1);  //日志页和数据页的处理。
+
+			//再一起写回
+			lsn = s_lspn * SECT_NUM_PER_SUBPAGE;
+			page_write(lsn, SECT_NUM_PER_PAGE, 1);
+
+
+		case 3:
+			//凑成一页直接写回
+			int lsn = thelpn * SECT_NUM_PER_PAGE;
+			//lsn = lspns[0] * SECT_NUM_PER_SUBPAGE;
+			page_write(lsn, SECT_NUM_PER_PAGE, 1);
+				
+			
+	}
 
 }
 
