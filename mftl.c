@@ -418,10 +418,6 @@ size_t mpm_write(sect_t lsn, sect_t size, int map_flag)
 		insert_lspn_node(anode);
 		
 	}
-
-
-
-	
 	
 		//逻辑页号转换为逻辑扇区号
 		s_lsn = lpn * SECT_NUM_PER_PAGE;
@@ -569,6 +565,11 @@ size_t mpm_write(sect_t lsn, sect_t size, int map_flag)
 }
 
 //整页写：修改映射表状态，触发垃圾回收
+/**
+lsn；起始扇区号
+size: 一个页的大小
+map_flag：1，data
+**/
 size_t page_write(sect_t lsn, sect_t size, int map_flag)  
 {
   int i;
@@ -594,8 +595,10 @@ size_t page_write(sect_t lsn, sect_t size, int map_flag)
   s_lsn = lpn * SECT_NUM_PER_PAGE;
 
 
-  if(map_flag == 2) //map page
+  if(map_flag == 2) //log page
     small = 0;
+		printf("page_write map_flag should be 1");
+		exit(0);
   else if ( map_flag == 1) //data page
     small = 1;
   else{
@@ -631,13 +634,14 @@ size_t page_write(sect_t lsn, sect_t size, int map_flag)
 
   //即将写入的空闲物理页号
   ppn = s_psn / SECT_NUM_PER_PAGE;
-  
-  for (i = 0; i < SECT_NUM_PER_PAGE; i++) 
+
+	if(map_flag == 1) { 
+		for (i = 0; i < SECT_NUM_PER_PAGE; i++) 
   {
     lsns[i] = s_lsn + i;
   }
-  if (opagemap[lpn].free == 0) {
-    s_psn1 = opagemap[lpn].ppn * SECT_NUM_PER_PAGE;
+  if (pagemap[lpn].free == 0) {
+    s_psn1 = pagemap[lpn].ppn * SECT_NUM_PER_PAGE;
     //是否是部分更新写，isHeadPartial 和 isTailPartial 在 disksim_iotrace.h 中设置
 	if( (map_flag != 2) && ( (isHead == 1 && isHeadPartial ==1) || (isTail == 1 && isTailPartial == 1) ) ){
 	  dftl_update_write = 1;
@@ -650,19 +654,15 @@ size_t page_write(sect_t lsn, sect_t size, int map_flag)
     nand_stat(OOB_WRITE);
   }
   else {
-    opagemap[lpn].free = 0;
+    pagemap[lpn].free = 0;
   }
-
+		
+    pagemap[lpn].ppn = ppn;
+  }
+  
   
 
-  if(map_flag == 2) {
-    mapdir[lpn].ppn = ppn;
-    opagemap[lpn].ppn = ppn;
-  }
-  else {
-    opagemap[lpn].ppn = ppn;
-  }
-
+ 
   free_page_no[small] += SECT_NUM_PER_PAGE;
 
   //向 flash 层下发写入操作
@@ -670,6 +670,95 @@ size_t page_write(sect_t lsn, sect_t size, int map_flag)
 
   return sect_num;
 }
+
+
+//整页写：修改映射表状态，触发垃圾回收
+/**
+针对日志页写
+lpsns；子页数组
+size: 数组大小
+map_flag：2，log
+**/
+size_t logpage_write(sect_t *lspns, sect_t size, int map_flag)  
+{
+  int i;
+  static int j = 0;
+	int k;
+  int ppn;
+  int small;
+
+  sect_t lsns[SECT_NUM_PER_PAGE];
+  int sect_num = SECT_NUM_PER_PAGE;
+
+  sect_t s_lsn;	// starting logical sector number
+  sect_t s_psn; // starting physical sector number 
+
+
+  if(map_flag == 2) //log page
+    small = 0;	
+  else if ( map_flag == 1) //data page
+    small = 1;
+		printf("LOGpage_write map_flag should be 2");
+		exit(0);
+  else{
+    printf("something corrupted");
+    exit(0);
+  }
+
+  if (free_page_no[small] >= SECT_NUM_PER_BLK) 
+  {
+
+    if ((free_blk_no[small] = nand_get_free_blk(0)) == -1) 
+    {
+      int j = 0;
+
+      while (free_blk_num < 4 ){  //当空闲块少于 4 个，触发垃圾回收
+        j += opm_gc_run(small, map_flag);
+      }
+      opm_gc_get_free_blk(small, map_flag);
+    } 
+    else {
+      free_page_no[small] = 0;
+    }
+  }
+
+  memset (lsns, 0xFF, sizeof (lsns));
+  
+  //获取即将使用的空闲物理页，s_psn 表示物理扇区号
+  s_psn = SECTOR(free_blk_no[small], free_page_no[small]);
+
+  if(s_psn % SECT_NUM_PER_PAGE != 0){
+    printf("s_psn: %d\n", s_psn);
+  }
+
+  //即将写入的空闲物理页号
+  ppn = s_psn / SECT_NUM_PER_PAGE;
+
+
+//设置相应的lsns[]，注意不连续	
+	for(k = 0; k < size; k++)
+	{
+		for (i = 0; i < SECT_NUM_PER_SUBPAGE; i++) 
+ 	 {
+    	lsns[i] = lspns[k] * SECT_NUM_PER_SUBPAGE+ i;
+  	}
+	} 
+
+//修改映射表
+	for(k = 0; k < SUBPAGE_NUM_PER_PAGE; k++)
+	{
+		subpagemap.lspn[k] = lspns[k];
+	} 
+	subpagemap.ppn = ppn;
+ 
+  free_page_no[small] += SECT_NUM_PER_PAGE;
+
+  //向 flash 层下发写入操作
+  nand_page_write(s_psn, lsns, 0, map_flag);
+
+  return sect_num;
+}
+
 
 void opm_end()
 {
@@ -924,6 +1013,7 @@ void merge_LRU()
 	int i;
 
 	int lspns[SUBPAGE_NUM_PER_PAGE] = {-1};
+	sect_t lspns1[SUBPAGE_NUM_PER_PAGE] = {-1};
 	int lspntmp;
 	p = p->next;
 	while(p != NULL)
@@ -941,10 +1031,24 @@ void merge_LRU()
 	{
 		case 0:
 			//选择链表前4个节点 写回日志区
+			p = LRU_list;
+			for(i = 0; i< SUBPAGE_NUM_PER_PAGE; i++)
+			{
+				lspns1[i] = p.lspn;
+				p = p->next;
+			}
 
+			logpage_write(lspns1, SUBPAGE_NUM_PER_PAGE , 2);
 
 		case 1:
+			p = LRU_list;
+			for(i = 0; i< SUBPAGE_NUM_PER_PAGE; i++)
+			{
+				lspns1[i] = p.lspn;
+				p = p->next;
+			}
 
+			logpage_write(lspns1, SUBPAGE_NUM_PER_PAGE , 2);
 
 		case 2:
 			//先对另外个子页进行一次读
@@ -970,8 +1074,7 @@ void merge_LRU()
 			//凑成一页直接写回
 			int lsn = thelpn * SECT_NUM_PER_PAGE;
 			//lsn = lspns[0] * SECT_NUM_PER_SUBPAGE;
-			page_write(lsn, SECT_NUM_PER_PAGE, 1);
-				
+			page_write(lsn, SECT_NUM_PER_PAGE, 1);			
 			
 	}
 

@@ -34,7 +34,8 @@ struct subpagemap_entry {
 
 //pagemap[] 数组的元素,页映射表条目，以lpn为索引,只记录PPN，4B大小
 struct pagemap_entry{
-    unsigned int ppn;    // LPN-PPN
+	  _u32 free  : 1; 					 //该条目是否已被使用
+		_u32 ppn	 : 31;					 //该逻辑页对应的物理页号 LPN-PPN
 };
 
 //每个映射页能够存放的条目数量，由于映射条目按照 LPN 顺序存放，所以映射页只记录 PPN
