@@ -67,8 +67,7 @@
 #define BLK_MASK_SECT 0x3FFFE000     // 0x3FFFFE00 -> 0x3FFFE000低30位为地址（以扇区为单位），见sect_state结构
 #define PGE_MASK_SECT 0x00001FE0     // 页号掩码
 #define SUBP_MASK_SECT 0x00001FF8    //子页掩码
-#define OFF_MASK_SECT 0x00000007     //子页内扇区掩码
-#define OFF_MASK_SECT_IN_PAGE 0x0000001F     //页内扇区掩码
+#define OFF_MASK_SECT 0x0000001F     //页内扇区掩码
 
 #define IND_MASK_SECT (PGE_MASK_SECT | OFF_MASK_SECT)
 #define BLK_BITS_SECT 17     //块编号最多17位，因为扇区地址为30位，块内扇区偏移需要3+2+8共13位
@@ -88,7 +87,6 @@
 struct blk_state {
    int free;       //是否是空闲块
    int ec;         //已擦除的次数
-   int isdata_blk;   //0表示日志块，1表示数据块 
 };
 
 //物理扇区的状态
@@ -111,7 +109,7 @@ struct nand_blk_info {
   _s32 ipc : 10; 
   _s32 lwn : 12; 
 */ 
-   int page_status[PAGE_NUM_PER_BLK];
+   int page_status[PAGE_NUM_PER_BLK];  //0 data,1 log
 };
 
 extern _u32 nand_blk_num;

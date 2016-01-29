@@ -90,6 +90,14 @@ struct subpagemap_entry *subpagemap;
 
 //直接维护一个每个物理子页的数据有效性。
 
+struct sub_state
+{
+	_u8 isvalid;  //0 表示数据无效，1 表示数据有效
+	_u8 islog;    //0,表示数据页，1 表示日志页
+
+}
+struct sub_state * valid_arr;
+
 
 
 

@@ -67,7 +67,7 @@ _u32 mpm_gc_cost_benefit()
   return max_blk;
 }
 
-// 读：从映射表 opagemap[] 中获取 PPN， 然后调用 nand_page_read() 进入 flash 层
+// 读：从映射表 pagemap[] 中获取 PPN， 然后调用 nand_page_read() 进入 flash 层
 /**
 lsn	起始扇区号，以子页为单位对齐
 size  扇区数，一般是8，一个子页大小
@@ -169,7 +169,10 @@ int mpm_log_gc_run(int small, int page_flag)
 
 }
 
-//垃圾回收函数，在 opm_write 函数中触发（当空闲块少于一定数量时触发）
+//垃圾回收函数，在write 函数中触发（当空闲块少于一定数量时触发）
+/**
+做子页层面的回收迁移
+*/
 int mpm_gc_run(int small, int map_flag)
 {
   blk_t victim_blk_no;
@@ -193,45 +196,12 @@ int mpm_gc_run(int small, int map_flag)
   }
  
   small = -1;
-
-  for( q = 0; q < PAGE_NUM_PER_BLK; q++){
-    if(nand_blk[victim_blk_no].page_status[q] == 1){ //map block
-      for( q = 0; q  < PAGE_NUM_PER_BLK; q++) {
-        if(nand_blk[victim_blk_no].page_status[q] == 0 ){
-          printf("something corrupted1=%d",victim_blk_no);
-        }
-      }
-      small = 0;      //map block
-      break;
-    } 
-    else if(nand_blk[victim_blk_no].page_status[q] == 0){ //data block
-      for( q = 0; q  < PAGE_NUM_PER_BLK; q++) {
-        if(nand_blk[victim_blk_no].page_status[q] == 1 ){
-          printf("something corrupted2",victim_blk_no);
-        }
-      }
-      small = 1;    //data block
-      break;
-    }
-  }
-
-  ASSERT ( small == 0 || small == 1);
+	
   pos = 0;
   merge_count = 0;
-
-	//先判断是日志块还是数据块，再进行分别处理
-	if(small == 0){
-
-	}
-	else if(small == 1){
-
-
-	}else{
-
-			printf("small error!");
-	}
 	
-  //遍历victim块内的每一个页，若有效，则进行迁移
+  //遍历victim块内的每一个页，如果是数据页，判断有效否，对有效数据页进行迁移
+  //如果是日志页，再对子页进行判断是否有效，对日志页中的有效子页进行合并（读取出），然后写回数据页，修改子页映射表，日志页计数器。
   for (i = 0; i < PAGE_NUM_PER_BLK; i++) 
   {
     valid_flag = nand_oob_read( SECTOR(victim_blk_no, i * SECT_NUM_PER_PAGE));
@@ -678,6 +648,8 @@ size_t page_write(sect_t lsn, sect_t size, int map_flag)
 lpsns；子页数组
 size: 数组大小
 map_flag：2，log
+闪存块不够，要触发gc
+日志页不够（根据设置的日志页大小 判断） 要触发日志页的回收
 **/
 size_t logpage_write(sect_t *lspns, sect_t size, int map_flag)  
 {
@@ -856,6 +828,15 @@ int mpm_init(blk_t blk_num, blk_t extra_num)
   memset(pagemap, 0xFF, sizeof (struct pagemap_entry) * pagemap_num);
   memset(subpagemap,  0xFF, sizeof (struct subpagemap_entry) * subpagemap_num);
 
+
+	//创建状态表
+	valid_arr = (struct sub_state *)malloc(sizeof(struct sub_state) * blk_num * SUBPAGE_NUM_PER_BLK);
+	if( valid_arr == NULL) {
+    printf("malloc valid_arr error.\n");
+		exit(0);
+  }
+	memset(valid_arr, 0xFF, sizeof (struct sub_state) * blk_num * SUBPAGE_NUM_PER_BLK);
+
   //创建数据缓存
   printf("LRU_list space: %d count.", LRU_cache_num);
 	LRU_list = NULL;
@@ -943,6 +924,16 @@ _u32 findppn_in_submap(_u32 m_lspn){
 	return -1;
 }
 
+/**
+日志页的回收
+*/
+logpage_gc()
+{
+
+
+
+}
+
 
 
 /******************数据缓存链表操作函数**************/
@@ -998,6 +989,10 @@ int free_node(lspn_node * anode)
 
 }
 
+
+/**
+缓存满时，对缓存进行回收
+*/
 void merge_LRU()
 {
 //各种写回操作。 

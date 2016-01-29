@@ -140,7 +140,7 @@ int opm_gc_run(int small, int map_flag)
   victim_blk_no = opm_gc_cost_benefit();
   memset(copy_lsn, 0xFF, sizeof (copy_lsn));
 
-  s = k = OFF_F_SECT(free_page_no[small]);
+  s = k = OFF_F_SECT(free_page_no[small]);  //Ò³¶ÔÆë
 
   if(!((s == 0) && (k == 0))){
     printf("s && k should be 0\n");
